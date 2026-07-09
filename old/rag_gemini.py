@@ -14,7 +14,6 @@ dotenv.load_dotenv()
 API_KEY = os.environ.get("GOOGLE_API_KEY")
 print(API_KEY)
 
-
 loader = TextLoader("knowledge.txt", encoding="utf-8")
 docs = loader.load()
 
@@ -33,15 +32,13 @@ vectorstore = Chroma.from_documents(chunks, embedding)
 # Configuramos la base de datos para que actúe como un buscador
 retriever = vectorstore.as_retriever(search_kwargs={"k": 2}) #k = número de resultados que queremos obtener
 
-print(retriever)
-
 # Configuramos el modelo de lenguaje que responderá a nuestras preguntas
 # temperatura= 0.2 significa que el modelo será más preciso y menos creativo
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.2)
 
 system_prompt ="""
 Eres un asistente experto. Usa los siguientes fragmentos de contexto 
-recuperados para responder la pregunta. Si no sabes la respuesta, di que no la sabes.
+recuperados para responder la pregunta. Si sientes que no sabes la respuesta, di que no la sabes, y si no tiene nada que ver lo que te puse con el contexto, di que tampoco lo sabes.
 Contexto:{context}
 """
 
@@ -59,8 +56,9 @@ combine_docs_chain = create_stuff_documents_chain(llm, prompt)
 # Creamos la cadena de recuperación que combina el buscador y la cadena de documentos
 rag_chain = create_retrieval_chain(retriever, combine_docs_chain)
 
-input_text = input("Pregunta: ")
-
-response = rag_chain.invoke({"input": input_text})
-
-print(response["answer"])
+while True:
+    input_text = input("Pregunta: ")
+    if input_text.lower() in ["exit", "quit"]:
+        break
+    response = rag_chain.invoke({"input": input_text})
+    print(response["answer"])
