@@ -44,6 +44,17 @@ services:
       qdrant:
         condition: service_started
 
+  client:
+    build: ./client
+    container_name: rag_client
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
 volumes:
   ollama_data:
   qdrant_data:
