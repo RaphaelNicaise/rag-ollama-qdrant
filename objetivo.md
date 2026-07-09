@@ -7,3 +7,6 @@ QDRANT es una base de datos vectorial que se puede utilizar para almacenar repre
 Modelo de IA Local.
 
 Todo dockerizado
+
+
+La idea es tener un chatbot en la que puedas subirle archivos PDF y luego hacerle preguntas sobre el contenido de esos archivos. El front me gustaria usar TanStack React. Tambien 
