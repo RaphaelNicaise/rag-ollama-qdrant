@@ -36,14 +36,16 @@ export async function askQuestion(input: string): Promise<QueryResponse> {
   return res.json();
 }
 
-export async function uploadFile(file: File): Promise<{ status: string; message: string }> {
+export async function uploadFile(files: FileList | File[]): Promise<{ status: string; message: string }> {
   const form = new FormData();
-  form.append("file", file);
+  Array.from(files).forEach((file) => {
+    form.append("files", file);
+  });
   const res = await fetch(`${API_BASE}/upload`, {
     method: "POST",
     body: form,
   });
-  if (!res.ok) throw new Error((await res.json()).detail ?? "Error al subir archivo");
+  if (!res.ok) throw new Error((await res.json()).detail ?? "Error al subir archivos");
   return res.json();
 }
 

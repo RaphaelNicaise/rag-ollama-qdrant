@@ -102,18 +102,18 @@ function ChatPage() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setMessages((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
         role: "user",
-        content: `Subiendo archivo: ${file.name}`,
+        content: `Subiendo ${files.length} archivo(s)...`,
       },
     ]);
-    uploadMutation.mutate(file);
+    uploadMutation.mutate(Array.from(files));
 
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -178,6 +178,7 @@ function ChatPage() {
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             accept=".pdf,.txt,.md"
             onChange={handleFileChange}
             className="hidden"

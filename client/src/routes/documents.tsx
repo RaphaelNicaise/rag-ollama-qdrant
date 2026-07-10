@@ -59,9 +59,9 @@ function DocumentsPage() {
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    uploadMutation.mutate(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    uploadMutation.mutate(Array.from(files));
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -87,6 +87,7 @@ function DocumentsPage() {
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               accept=".pdf,.txt,.md"
               onChange={handleFileChange}
               className="hidden"

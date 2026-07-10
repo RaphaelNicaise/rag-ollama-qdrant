@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from qdrant_client.models import Filter, FieldCondition, MatchValue
+from typing import List
 import os
 import time
 import httpx
@@ -39,36 +40,47 @@ async def ask_rag(payload: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(files: List[UploadFile] = File(...)):
+    results = []
+    success_count = 0
 
-    filename = file.filename
-    ext = os.path.splitext(filename)[1].lower()
-    
-    if ext not in [".txt", ".md", ".pdf"]:
-        raise HTTPException(
-            status_code=400, 
-            detail="Formato inválido. Solo se admiten archivos .txt, .md y .pdf"
-        )
-    
-    temp_file_path = os.path.join(UPLOAD_DIR, filename)
-    try:
-        with open(temp_file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-            
-        success = process_file(temp_file_path, ext)
+    for file in files:
+        filename = file.filename
+        ext = os.path.splitext(filename)[1].lower()
         
-        if success:
-            return {"status": "success", "message": f"'{filename}' se indexó correctamente en Qdrant."}
-        else:
-            raise HTTPException(status_code=500, detail="El archivo estaba vacío o no pudo procesarse.")
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en el servidor: {str(e)}")
+        if ext not in [".txt", ".md", ".pdf"]:
+            results.append({"filename": filename, "status": "error", "message": "Formato inválido."})
+            continue
         
-    finally:
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        temp_file_path = os.path.join(UPLOAD_DIR, filename)
+        try:
+            with open(temp_file_path, "wb") as buffer:
+                content = await file.read()
+                buffer.write(content)
+                
+            success = process_file(temp_file_path, ext)
+            
+            if success:
+                success_count += 1
+                results.append({"filename": filename, "status": "success"})
+            else:
+                results.append({"filename": filename, "status": "error", "message": "Archivo vacío."})
+                
+        except Exception as e:
+            results.append({"filename": filename, "status": "error", "message": str(e)})
+            
+        finally:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                
+    if success_count == 0 and len(files) > 0:
+        raise HTTPException(status_code=400, detail="No se pudo procesar ningún archivo.")
+        
+    return {
+        "status": "success", 
+        "message": f"{success_count} archivo(s) indexado(s) correctamente.",
+        "results": results
+    }
 
 @router.get("/documents")
 async def list_documents():
