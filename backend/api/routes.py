@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 import os
 import time
 import httpx
@@ -101,6 +102,29 @@ async def list_documents():
             {"filename": fname, "indexed_at": indexed_at}
             for fname, indexed_at in sources.items()
         ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/documents/{filename}")
+async def delete_document(filename: str):
+    try:
+        if not client.collection_exists(collection_name=settings.COLLECTION_NAME):
+            return {"status": "success"}
+
+        source_path = os.path.join(UPLOAD_DIR, filename)
+        
+        client.delete(
+            collection_name=settings.COLLECTION_NAME,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.source",
+                        match=MatchValue(value=source_path)
+                    )
+                ]
+            )
+        )
+        return {"status": "success", "message": f"'{filename}' eliminado."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -102,3 +102,10 @@ export async function fetchDocuments(): Promise<DocumentInfo[]> {
   if (!res.ok) throw new Error("No se pudieron obtener los documentos");
   return res.json();
 }
+
+export async function deleteDocument(filename: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(filename)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("No se pudo eliminar el documento");
+}

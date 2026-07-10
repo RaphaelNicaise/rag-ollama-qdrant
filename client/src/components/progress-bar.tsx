@@ -13,17 +13,17 @@ export function ProgressBar({ value, max, label }: ProgressBarProps) {
     <div className="w-full">
       {label && (
         <div className="flex justify-between items-center mb-1.5">
-          <span className="text-xs font-mono text-[var(--color-text-secondary)] truncate">
+          <span className="text-xs font-mono text-zinc-400 truncate">
             {label}
           </span>
-          <span className="text-xs font-mono text-[var(--color-text-muted)]">
+          <span className="text-xs font-mono text-zinc-500">
             {mbDone} / {mbTotal} MB
           </span>
         </div>
       )}
-      <div className="w-full h-1.5 bg-[var(--color-canvas)] rounded-full overflow-hidden">
+      <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
         <div
-          className="h-full bg-[var(--color-accent)] rounded-full transition-all duration-300 ease-out"
+          className="h-full bg-zinc-100 rounded-full transition-all duration-300 ease-out"
           style={{ width: `${pct}%` }}
         />
       </div>
