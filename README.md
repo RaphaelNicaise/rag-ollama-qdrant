@@ -13,20 +13,21 @@ graph TD
     %% Ingesta de Datos
     subgraph Ingesta de Datos
     A[Usuario sube archivo PDF/TXT/MD] --> B(FastAPI: /api/upload)
-    B --> C{LangChain TextSplitter}
-    C -->|Crea fragmentos de texto| D[OllamaEmbeddings: nomic-embed-text]
-    D -->|Convierte a vectores| E[(Qdrant Vector DB)]
+    B --> C{Semantic Chunker}
+    C -->|Crea fragmentos Padre/Hijo| D[OllamaEmbeddings / FastEmbed]
+    D -->|Vectores Densos y Dispersos| E[(Qdrant Vector DB / InMemoryStore)]
     end
 
     %% Consulta de Datos
     subgraph Generación de Respuestas
     F[Usuario hace pregunta] --> G(FastAPI: /api/ask)
-    G --> H[OllamaEmbeddings: nomic-embed-text]
-    H -->|Pregunta vectorizada| E
-    E -->|Búsqueda Semántica| I[Recupera los fragmentos más relevantes]
-    I --> J{LangChain Prompt Template}
-    J -->|Contexto + Pregunta| K[ChatOllama: qwen3.5:2b]
-    K --> L[Respuesta Generada]
+    G --> H[OllamaEmbeddings / FastEmbed]
+    H -->|Búsqueda Híbrida| E
+    E -->|K=25 Candidatos| I[Búsqueda Híbrida Qdrant]
+    I --> J{Cross-Encoder Reranker}
+    J -->|Selecciona top 5| K[LangChain Prompt Template]
+    K -->|Contexto Padre + Pregunta| L[ChatOllama: qwen3.5:2b]
+    L --> M[Respuesta Generada]
     end
 ```
 
@@ -52,8 +53,11 @@ Las bases de datos tradicionales (como SQL) buscan coincidencias exactas de pala
 * Qdrant compara la "distancia matemática" (Distancia Coseno) entre el vector de tu pregunta y los vectores de todos los fragmentos de tus documentos.
 * Devuelve los fragmentos cuyo significado sea más cercano a tu pregunta.
 
-### 4. Fragmentación (Chunking)
-No podemos pasarle un libro entero de 500 páginas al LLM de una vez por las limitaciones de contexto. Por eso, durante la ingesta, cortamos los documentos en pedazos más pequeños ("chunks") usando el `RecursiveCharacterTextSplitter`. En este proyecto, cortamos en bloques de 1000 caracteres, dejando un solapamiento (overlap) de 200 caracteres entre fragmentos para no perder el contexto si cortamos justo a la mitad de una idea.
+### 4. Búsqueda Híbrida, Chunking Avanzado y Reranking
+Para evitar el ruido y traer los mejores resultados, implementamos técnicas de grado producción:
+* **Búsqueda Híbrida:** Combina búsqueda vectorial (semántica) con búsqueda por palabras clave exactas (Sparse Vectors / BM25).
+* **Chunking Semántico & Parent-Child Retriever:** Corta el texto por significado en lugar de caracteres planos. Almacena oraciones chicas para buscar con precisión, pero le da al LLM el párrafo entero para máximo contexto.
+* **Reranking:** Recupera 25 fragmentos iniciales y usa un modelo especializado (Cross-Encoder) para re-ordenarlos y quedarse solo con los 5 más valiosos.
 
 ---
 
@@ -68,9 +72,9 @@ La lógica del proyecto vive dentro de la carpeta `backend/`. Esta es su estruct
 * **`schemas/`**
   * `rag.py`: Define usando Pydantic qué estructura deben tener los datos de entrada (`QueryRequest`) y de salida (`QueryResponse`).
 * **`services/`**
-  * `vector_db.py`: Gestiona la conexión con Qdrant. Tiene la función `process_file` que lee un PDF/TXT, lo fragmenta y lo guarda en la base de datos.
-  * `llm.py`: Configura la conexión con Ollama. Aquí definimos el modelo de chat (`qwen3.5:2b`) y el modelo de embeddings (`nomic-embed-text`).
-  * `rag_chain.py`: **El corazón del RAG**. Utiliza LangChain (LCEL) para armar el pipeline que une al recuperador de Qdrant, la plantilla del prompt, y el modelo de lenguaje de Ollama.
+  * `vector_db.py`: Gestiona la conexión con Qdrant. Implementa el Semantic Chunker, Parent-Child Retriever y la Búsqueda Híbrida.
+  * `llm.py`: Configura la conexión con Ollama para LLM y Embeddings.
+  * `rag_chain.py`: **El corazón del RAG**. Utiliza LangChain para armar el pipeline con el CompressionRetriever (Reranker) antes de enviarle todo al modelo de lenguaje.
 
 ---
 
@@ -79,17 +83,13 @@ La lógica del proyecto vive dentro de la carpeta `backend/`. Esta es su estruct
 ### A. Subiendo un documento
 1. Mandas un POST a `/api/upload` con el archivo.
 2. FastAPI guarda el archivo temporalmente.
-3. Se llama a `process_file`: LangChain detecta si es PDF o texto, extrae todo el contenido.
-4. Se corta el texto largo en pedazos manejables de 1000 caracteres.
-5. Qdrant toma cada pedazo, le pide a Ollama (`nomic-embed-text`) su representación matemática, y lo guarda permanentemente en disco (dentro del contenedor de Docker).
+3. LangChain lee el documento y el `ParentDocumentRetriever` usa `SemanticChunker` para dividirlo en fragmentos padres (con sentido completo) e hijos (trozos precisos).
+4. Qdrant guarda los vectores densos (Ollama) y dispersos (FastEmbed) de los hijos, y la memoria guarda el texto de los padres.
 
 ### B. Haciendo una pregunta
-1. Mandas un POST a `/api/ask` con el JSON `{"input": "Tu pregunta"}`.
-2. La petición entra a `rag_chain.invoke()`.
-3. LangChain toma tu pregunta y la pasa por el `retriever` (Qdrant).
-4. Qdrant convierte tu pregunta en un vector y busca los fragmentos más parecidos que guardamos antes.
-5. Los fragmentos recuperados se unen en un solo gran texto de "Contexto".
-6. Se arma un Mensaje combinando el Contexto recuperado y tu Pregunta original, utilizando una plantilla estructurada.
-7. Ese Mensaje estructurado se envía a Ollama (`ChatOllama: qwen3.5:2b`).
-8. Ollama lee el contexto, entiende la pregunta, y genera una respuesta coherente, token por token.
-9. FastAPI detiene el cronómetro, suma los tokens usados según la metadata de Ollama, y te responde el JSON con la respuesta final, tiempo, y tokens consumidos.
+1. Mandas un POST a `/api/ask` con la pregunta.
+2. La pregunta pasa por el retriever híbrido, recuperando los 25 Hijos más relevantes (y trayendo sus Padres correspondientes).
+3. Los 25 fragmentos Padre pasan por el `CrossEncoderReranker`, que los evalúa contra tu pregunta.
+4. El Reranker filtra y deja solo los 5 contextos perfectos.
+5. Se arma el Prompt con esos 5 contextos y la pregunta.
+6. Ollama genera la respuesta final asegurando mínima alucinación gracias al contexto altamente filtrado.

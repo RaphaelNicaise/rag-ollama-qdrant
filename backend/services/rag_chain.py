@@ -1,11 +1,31 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+from langchain.retrievers.document_compressors import CrossEncoderReranker
+from langchain.retrievers import ContextualCompressionRetriever
+
 from services.llm import llm
-from services.vector_db import retriever
+from services.vector_db import parent_child_retriever
+
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
+
+# descargar y cargar el modelo de reranking
+reranker_model= HuggingFaceCrossEncoder("BAAI/bge-reranker-base")
+
+# seleccionar los 5 fragmentos más relevantes
+compressor = CrossEncoderReranker(reranker_model, top_n=5)
+
+# le pedimos al retriever base (hibrido ahora), que traiga 25 documentos
+parent_child_retriever.search_kwargs = {"k": 25}
+
+# Compression Retriever envuelve el retriever base y le aplica el re-ordenamiento
+# agarramos los 25 documentos y los re-ordenamos para quedarnos con los 5 más relevantes, y asi pasarselos al LLM
+advanced_retriever = ContextualCompressionRetriever(
+    base_compressor=compressor,
+    base_retriever=parent_child_retriever
+)
 
 system_prompt = """
 Eres un asistente experto. Usa los siguientes fragmentos de contexto para responder la pregunta.
@@ -13,13 +33,14 @@ Eres un asistente experto. Usa los siguientes fragmentos de contexto para respon
 Contexto:
 {context}
 """
+
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
     ("human", "{question}")
 ])
 
 rag_chain = (
-    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    {"context": advanced_retriever | format_docs, "question": RunnablePassthrough()}
     | prompt
     | llm
 )
