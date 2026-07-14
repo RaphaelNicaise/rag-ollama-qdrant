@@ -1,8 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
-from langchain_community.cross_encoders import HuggingFaceCrossEncoder
-from langchain.retrievers.document_compressors import CrossEncoderReranker
-from langchain.retrievers import ContextualCompressionRetriever
+from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
+from langchain_classic.retrievers import ContextualCompressionRetriever
 
 from services.llm import llm
 from services.vector_db import parent_child_retriever
@@ -11,11 +10,8 @@ from services.vector_db import parent_child_retriever
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-# descargar y cargar el modelo de reranking
-reranker_model= HuggingFaceCrossEncoder("BAAI/bge-reranker-base")
-
-# seleccionar los 5 fragmentos más relevantes
-compressor = CrossEncoderReranker(reranker_model, top_n=5)
+# FlashRank: un reranker ultra ligero (usa ONNX) que no requiere PyTorch
+compressor = FlashrankRerank(top_n=5)
 
 # le pedimos al retriever base (hibrido ahora), que traiga 25 documentos
 parent_child_retriever.search_kwargs = {"k": 25}

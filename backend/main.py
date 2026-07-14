@@ -17,4 +17,4 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup_event():
-    init_vector_db()
+    pass

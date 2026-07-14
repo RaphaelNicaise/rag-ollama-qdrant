@@ -7,13 +7,28 @@ from langchain_qdrant import QdrantVectorStore, FastEmbedSparse
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.retrievers import ParentDocumentRetriever
-from langchain.storage import InMemoryStore
+from langchain_classic.retrievers import ParentDocumentRetriever
+from langchain_core.stores import InMemoryStore
 
 from config import settings
 from services.llm import embeddings
 
 client = QdrantClient(url=settings.QDRANT_URL)
+
+def init_vector_db():
+    """Inicializa la colección de Qdrant si está vacía."""
+    try:
+        if not client.collection_exists(collection_name=settings.COLLECTION_NAME):
+            client.create_collection(
+                collection_name=settings.COLLECTION_NAME,
+                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
+                sparse_vectors_config={"langchain-sparse": models.SparseVectorParams()}
+            )
+    except Exception as e:
+        print(f"Error initializing Qdrant collection: {str(e)}")
+
+# Aseguramos que exista antes de instanciar el vectorstore
+init_vector_db()
 
 # busqueda hibrida (modelo para generar vectores dispersos) (palabras clave/bm25)
 sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
@@ -22,15 +37,15 @@ sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 vectorstore = QdrantVectorStore(
     client=client, 
     collection_name=settings.COLLECTION_NAME, 
-    embeddings=embeddings,
-    sparse_embeddings=sparse_embeddings, 
+    embedding=embeddings,
+    sparse_embedding=sparse_embeddings, 
     retrieval_mode="hybrid"
 )
 
-# semantic chunking (crea fragmentos basados en cambios de significado en el texto, en lugar de solo tamaño fijo)
-parent_splitter=SemanticChunker(embeddings, breakpoint_threshold_type="percentile")
+# splitters clásicos para asegurar compatibilidad con ParentDocumentRetriever
+parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
 
-# child splitter (divide los fragmentos en partes más pequeñas para cumplir con los límites de tokens)
+# child splitter (divide los fragmentos en partes más pequeñas)
 child_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=50)
 
 store = InMemoryStore()
@@ -64,15 +79,4 @@ def process_file(file_path: str, extension: str):
     except Exception as e:
         print(f"Error procesando el archivo: {str(e)}")
         raise e
-
-def init_vector_db():
-    """Inicializa la colección de Qdrant si está vacía."""
-    try:
-        if not client.collection_exists(collection_name=settings.COLLECTION_NAME):
-            client.create_collection(
-                collection_name=settings.COLLECTION_NAME,
-                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
-                sparse_vectors_config={"langchain_sparse": models.SparseVectorsConfig()}
-            )
-    except Exception as e:
-        print(f"Error initializing Qdrant collection: {str(e)}")
+

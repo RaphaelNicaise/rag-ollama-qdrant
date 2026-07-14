@@ -11,7 +11,7 @@ class Settings:
 
         self.OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
         self.QDRANT_URL: str = os.getenv("QDRANT_URL", "http://localhost:6333")
-        self.COLLECTION_NAME: str = "chatbot_documents"
+        self.COLLECTION_NAME: str = "chatbot_docs"
         
     def __new__(cls):
         if cls.__instance is None:
